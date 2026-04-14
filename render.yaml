@@ -9,6 +9,8 @@ services:
     region: oregon         # or singapore, frankfurt, ohio
     healthCheckPath: /health
     envVars:
+      - key: PORT
+        value: "10000"       # must match the Uvicorn port in start.sh
       - key: MODEL_NAME
         value: gemma4:e2b
       - key: NUM_CTX
