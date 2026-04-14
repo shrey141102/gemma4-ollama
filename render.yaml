@@ -1,0 +1,25 @@
+# render.yaml — Infrastructure as Code for Render.com
+# Push this repo to GitHub, then connect it in Render Dashboard.
+
+services:
+  - type: web
+    name: gemma4-api
+    runtime: docker
+    plan: pro plus         # 8GB RAM, 4 vCPU — $175/mo
+    region: oregon         # or singapore, frankfurt, ohio
+    healthCheckPath: /health
+    envVars:
+      - key: MODEL_NAME
+        value: gemma4:e2b
+      - key: NUM_CTX
+        value: "8192"       # keep small for 8GB RAM
+      - key: API_KEY
+        value: ""            # set this to protect your API (e.g. "my-secret-key-123")
+      - key: OLLAMA_NUM_PARALLEL
+        value: "1"
+      - key: OLLAMA_MAX_LOADED_MODELS
+        value: "1"
+    disk:
+      name: ollama-models
+      mountPath: /root/.ollama
+      sizeGB: 10             # persists models across deploys
