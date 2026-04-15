@@ -93,6 +93,11 @@ async def chat(request: Request):
         return StreamingResponse(
             _stream_response(ollama_payload),
             media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
         )
     else:
         async with httpx.AsyncClient(timeout=300) as client:
@@ -108,19 +113,31 @@ async def chat(request: Request):
 
 async def _stream_response(payload: dict):
     """Stream chunks as SSE events."""
-    async with httpx.AsyncClient(timeout=300) as client:
-        async with client.stream("POST", f"{OLLAMA_URL}/api/chat", json=payload) as resp:
-            async for line in resp.aiter_lines():
-                if line.strip():
+    try:
+        async with httpx.AsyncClient(timeout=300) as client:
+            async with client.stream("POST", f"{OLLAMA_URL}/api/chat", json=payload) as resp:
+                if resp.status_code != 200:
+                    error_body = await resp.aread()
                     try:
-                        chunk = json.loads(line)
-                        content = chunk.get("message", {}).get("content", "")
-                        if content:
-                            yield f"data: {json.dumps({'content': content})}\n\n"
-                        if chunk.get("done"):
-                            yield f"data: {json.dumps({'done': True})}\n\n"
-                    except json.JSONDecodeError:
-                        pass
+                        error_msg = json.loads(error_body).get("error", "Ollama error")
+                    except Exception:
+                        error_msg = error_body.decode(errors="replace")
+                    yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+                async for line in resp.aiter_lines():
+                    if line.strip():
+                        try:
+                            chunk = json.loads(line)
+                            content = chunk.get("message", {}).get("content", "")
+                            if content:
+                                yield f"data: {json.dumps({'content': content})}\n\n"
+                            if chunk.get("done"):
+                                yield f"data: {json.dumps({'done': True})}\n\n"
+                        except json.JSONDecodeError:
+                            pass
+    except Exception as e:
+        yield f"data: {json.dumps({'error': str(e)})}\n\n"
     yield "data: [DONE]\n\n"
 
 
@@ -175,6 +192,9 @@ CHAT_HTML = """
 <title>Gemma4 E2B — Chat</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <style>
   :root {
     --bg: #0a0a0c;
@@ -261,7 +281,6 @@ CHAT_HTML = """
     border-radius: 16px;
     font-size: 14.5px;
     line-height: 1.65;
-    white-space: pre-wrap;
     word-break: break-word;
   }
   .msg.user {
@@ -269,12 +288,15 @@ CHAT_HTML = """
     background: var(--user-bg);
     border-bottom-right-radius: 4px;
     color: #c7d2fe;
+    white-space: pre-wrap;
   }
   .msg.ai {
     align-self: flex-start;
     background: var(--ai-bg);
     border: 1px solid var(--border);
     border-bottom-left-radius: 4px;
+    max-width: 800px;
+    width: 100%;
   }
   .msg.ai .label {
     font-family: 'DM Mono', monospace;
@@ -290,14 +312,135 @@ CHAT_HTML = """
     color: var(--danger);
   }
 
-  .typing-cursor::after {
-    content: '▊';
-    animation: blink 0.8s step-end infinite;
+  /* ── Blinking cursor ── */
+  .blink-cursor {
     color: var(--accent);
-    margin-left: 2px;
+    animation: blink 0.8s step-end infinite;
+    font-weight: bold;
   }
   @keyframes blink {
     50% { opacity: 0; }
+  }
+
+  /* ── Markdown rendering ── */
+  .msg.ai .content p { margin: 0 0 12px 0; }
+  .msg.ai .content p:last-child { margin-bottom: 0; }
+  .msg.ai .content h1, .msg.ai .content h2,
+  .msg.ai .content h3, .msg.ai .content h4 {
+    color: var(--text);
+    margin: 20px 0 10px 0;
+    line-height: 1.3;
+  }
+  .msg.ai .content h1:first-child, .msg.ai .content h2:first-child,
+  .msg.ai .content h3:first-child, .msg.ai .content h4:first-child {
+    margin-top: 4px;
+  }
+  .msg.ai .content h1 { font-size: 1.4em; }
+  .msg.ai .content h2 { font-size: 1.25em; }
+  .msg.ai .content h3 { font-size: 1.1em; color: var(--accent); }
+  .msg.ai .content h4 { font-size: 1em; color: var(--text-dim); }
+
+  .msg.ai .content pre {
+    background: #0d0d14;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin: 12px 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  .msg.ai .content pre code {
+    display: block;
+    padding: 16px;
+    overflow-x: auto;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    background: transparent;
+    color: var(--text);
+    border: none;
+    border-radius: 0;
+  }
+  .msg.ai .content code {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.88em;
+    background: var(--surface2);
+    padding: 2px 7px;
+    border-radius: 5px;
+    color: #c7d2fe;
+    border: 1px solid var(--border);
+  }
+  .msg.ai .content ul, .msg.ai .content ol {
+    margin: 8px 0;
+    padding-left: 24px;
+  }
+  .msg.ai .content li { margin: 4px 0; }
+  .msg.ai .content li::marker { color: var(--accent); }
+  .msg.ai .content blockquote {
+    border-left: 3px solid var(--accent);
+    margin: 12px 0;
+    padding: 8px 16px;
+    color: var(--text-dim);
+    background: rgba(110, 231, 183, 0.04);
+    border-radius: 0 8px 8px 0;
+  }
+  .msg.ai .content hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 16px 0;
+  }
+  .msg.ai .content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  .msg.ai .content th, .msg.ai .content td {
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    text-align: left;
+  }
+  .msg.ai .content th {
+    background: var(--surface2);
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .msg.ai .content strong { color: #fff; }
+  .msg.ai .content a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s;
+  }
+  .msg.ai .content a:hover { border-bottom-color: var(--accent); }
+
+  /* Code block language label */
+  .code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 16px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .copy-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .copy-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
   }
 
   /* ── Welcome ── */
@@ -410,6 +553,50 @@ CHAT_HTML = """
 <footer>CPU inference — responses may take a few seconds · API docs at /docs</footer>
 
 <script>
+// Configure marked with highlight.js
+marked.setOptions({
+  highlight: function(code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(code, { language: lang }).value;
+    }
+    return hljs.highlightAuto(code).value;
+  },
+  breaks: true,
+  gfm: true,
+});
+
+// Custom renderer for code blocks with language label + copy button
+const renderer = new marked.Renderer();
+renderer.code = function(obj) {
+  const code = obj.text || obj;
+  const lang = obj.lang || '';
+  let highlighted;
+  if (lang && hljs.getLanguage(lang)) {
+    highlighted = hljs.highlight(code, { language: lang }).value;
+  } else {
+    highlighted = hljs.highlightAuto(code).value;
+  }
+  const langLabel = lang || 'code';
+  return `<pre><div class="code-header"><span>${langLabel}</span><button class="copy-btn" onclick="copyCode(this)">copy</button></div><code class="hljs">${highlighted}</code></pre>`;
+};
+marked.setOptions({ renderer });
+
+function copyCode(btn) {
+  const code = btn.closest('pre').querySelector('code').textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = 'copied!';
+    setTimeout(() => btn.textContent = 'copy', 1500);
+  });
+}
+
+function renderMarkdown(text) {
+  try {
+    return marked.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 const messagesEl = document.getElementById('messages');
 const inputEl = document.getElementById('input');
 const sendBtn = document.getElementById('send');
@@ -459,12 +646,18 @@ async function send() {
       body: JSON.stringify({ messages: history, stream: true }),
     });
 
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error('Server error (' + res.status + '): ' + errText);
+    }
+
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let full = '';
     let buffer = '';
+    let isDone = false;
 
-    while (true) {
+    while (!isDone) {
       const { done, value } = await reader.read();
       if (done) break;
 
@@ -474,27 +667,28 @@ async function send() {
 
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
-        const payload = line.slice(6);
-        if (payload === '[DONE]') break;
-        try {
-          const data = JSON.parse(payload);
-          if (data.content) {
-            full += data.content;
-            contentEl.textContent = full;
-            messagesEl.scrollTop = messagesEl.scrollHeight;
-          }
-        } catch {}
+        const payload = line.slice(6).trim();
+        if (payload === '[DONE]') { isDone = true; break; }
+        let data;
+        try { data = JSON.parse(payload); } catch { continue; }
+        if (data.error) throw new Error(data.error);
+        if (data.content) {
+          full += data.content;
+          contentEl.innerHTML = renderMarkdown(full) + '<span class="blink-cursor">&#9608;</span>';
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
       }
     }
 
-    contentEl.classList.remove('typing-cursor');
-    history.push({ role: 'assistant', content: full });
+    // Final render without cursor
+    contentEl.innerHTML = renderMarkdown(full);
+    if (full) history.push({ role: 'assistant', content: full });
 
     // Keep conversation history manageable (last 20 messages)
     if (history.length > 20) history = history.slice(-20);
 
   } catch (err) {
-    contentEl.classList.remove('typing-cursor');
+    contentEl.innerHTML = '';
     contentEl.textContent = 'Error: ' + err.message;
     aiEl.classList.add('error');
   }
@@ -508,7 +702,7 @@ function addMessage(text, role, isStreaming = false) {
   const el = document.createElement('div');
   el.className = `msg ${role}`;
   if (role === 'ai') {
-    el.innerHTML = `<div class="label">gemma4 e2b</div><div class="content ${isStreaming ? 'typing-cursor' : ''}">${text}</div>`;
+    el.innerHTML = `<div class="label">gemma4 e2b</div><div class="content">${text}</div>`;
   } else {
     el.textContent = text;
   }
