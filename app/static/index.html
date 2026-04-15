@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gemma4 E2B — Chat</title>
+<meta name="description" content="Chat with Gemma4 E2B — your own LLM running on Ollama, deployed on Render.com">
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+
+<!-- Syntax highlighting -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+<!-- App styles -->
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="dot"></div>
+  <h1><span>gemma4</span>:e2b</h1>
+  <div class="badge">Ollama · Render</div>
+</header>
+
+<div id="messages">
+  <div class="welcome">
+    <h2>Your own LLM, running in the cloud.</h2>
+    <p>Gemma4 E2B on Ollama — deployed on Render.com<br>
+    Type anything below to start chatting.</p>
+    <code>POST /api/chat &nbsp;·&nbsp; GET /ask?q=...</code>
+  </div>
+</div>
+
+<div id="input-area">
+  <textarea id="input" rows="1" placeholder="Ask me anything..." autofocus></textarea>
+  <button id="send" title="Send">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#0a0a0c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="22" y1="2" x2="11" y2="13"></line>
+      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+    </svg>
+  </button>
+</div>
+
+<footer>CPU inference — responses may take a few seconds · API docs at /docs</footer>
+
+<!-- App logic -->
+<script src="/static/script.js"></script>
+</body>
+</html>
