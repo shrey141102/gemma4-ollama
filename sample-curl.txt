@@ -1,0 +1,7 @@
+curl -X POST https://gemma4-api.onrender.com/api/chat \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer 8513ee3a715a62adacc1a42623ecbf6a" \
+  -d '{
+    "messages": [{"role": "user", "content": "Write a haiku about coding"}],
+    "stream": true
+  }'
